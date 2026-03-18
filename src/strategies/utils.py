@@ -2,7 +2,7 @@ import pandas as pd
 
 import mplfinance as mpf
 
-def add_moving_average(df, column = "close", window = 20):
+def add_moving_average(df, column = "Close", window = 20):
     """
     Calculate a moving average for a given column.
 
@@ -28,7 +28,7 @@ def add_moving_average(df, column = "close", window = 20):
     
     return df
 
-def add_macd(df, column="close", fast=12, slow=26, signal=9):
+def add_macd(df, column="Close", fast=12, slow=26, signal=9):
     """
     Calculate MACD indicator.
 
@@ -68,7 +68,7 @@ def add_macd(df, column="close", fast=12, slow=26, signal=9):
     return df
 
 
-def add_stochastic(df, high="high", low="low", close="close",
+def add_stochastic(df, high="High", low="Low", close="Close",
                    k_period=5, k_smooth=3, d_period=3):
 
     df = df.copy()
@@ -90,7 +90,7 @@ def add_stochastic(df, high="high", low="low", close="close",
 
 import numpy as np
 
-def add_obv(df, close="close", volume="volume"):
+def add_obv(df, close="Close", volume="Volume"):
     """
     Calculate On-Balance Volume (OBV)
     """
@@ -109,9 +109,9 @@ def add_obv(df, close="close", volume="volume"):
     # OBV calculation
     df["obv"] = (direction * df[volume]).cumsum()
 
-    return 
+    return df
 
-def add_rsi(df, column="close", period=5):
+def add_rsi(df, column="Close", period=5):
     """
     Calculate Relative Strength Index (RSI)
     """
@@ -133,7 +133,7 @@ def add_rsi(df, column="close", period=5):
     return df
 
 
-def add_cci(df, high="high", low="low", close="close", period=20):
+def add_cci(df, high="High", low="Low", close="Close", period=20):
     """
     Calculate Commodity Channel Index (CCI)
     """
@@ -192,12 +192,12 @@ def plot_full_chart(df, save_path="chart.png"):
     """
 
     df = df.copy()
-    df = df.sort_values("date")
-    df = df.set_index("date")
+    #df = df.sort_values("Date")
+    #df = df.set_index("Date")
 
     # --- indicators ---
-    df = add_moving_average(df, "close", 20)
-    df = add_moving_average(df, "close", 50)
+    df = add_moving_average(df, "Close", 20)
+    df = add_moving_average(df, "Close", 50)
 
     df = add_macd(df)
     df = add_rsi(df)
@@ -205,10 +205,14 @@ def plot_full_chart(df, save_path="chart.png"):
     df = add_obv(df)
     df = add_cci(df)
 
+    # Flatten MultiIndex columns
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.droplevel(1)
+
     apds = [
 
-        mpf.make_addplot(df["close_MA_20"]),
-        mpf.make_addplot(df["close_MA_50"]),
+        mpf.make_addplot(df["Close_MA_20"]),
+        mpf.make_addplot(df["Close_MA_50"]),
 
         # MACD
         mpf.make_addplot(df["MACD"], panel=2),
@@ -242,14 +246,18 @@ data = pd.DataFrame(yf.download(ticker, start='2020-01-01', end='2025-01-01'))
 returns = data.pct_change().dropna()
 
 print(data)
+data = data.iloc[:200]
 
-data["moving_average_20"] = add_moving_average(data, "close", 20)
-data["moving_average_50"] = add_moving_average(data, "close", 50)
-data["moving_average_200"] = add_moving_average(data, "close", 200)
-data["MACD"] = add_macd(data, "close")
-data["stochastics"] = add_stochastic(data, "high", "low", "close", 5, 3, 3)
-data["OBV"] = add_obv(data, "close", "volume")
-data["RSI"] = add_rsi(data, "close", 5)
-data["CCI"] = add_cci(data, "high", "low", "close", 20)
+# Ensure numeric columns
+cols = ["Open", "High", "Low", "Close", "Volume"]
+
+add_moving_average(data, "Close", 20)
+add_moving_average(data, "Close", 50)
+add_moving_average(data, "Close", 200)
+add_macd(data, "Close")
+add_stochastic(data, "High", "Low", "Close", 5, 3, 3)
+add_obv(data, "Close", "Volume")
+add_rsi(data, "Close", 5)
+add_cci(data, "High", "Low", "Close", 20)
 
 plot_full_chart(data, "analysis_chart.png")
