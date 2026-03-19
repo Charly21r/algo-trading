@@ -1,8 +1,166 @@
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
+class BaseStrategy:
+    def __init__(self, df):
+        self.df = df
+        self.signals = df.copy()
 
-class PullbackStrategy:
+    def backtest(self):
+        in_trade = False
+        entry_price = 0
+        stop_loss = 0
+        take_profit = 0
+
+        trades = []
+
+        for i in range(len(self.df)):
+            price = self.df['Close'].iloc[i]
+
+            if not in_trade and self.signals['buy_signal'].iloc[i]:
+                in_trade = True
+                entry_price = price
+                stop_loss = self.signals['stop_loss'].iloc[i]
+                take_profit = self.signals['take_profit'].iloc[i]
+
+            elif in_trade:
+                low = self.df['Low'].iloc[i].values[0]
+                high = self.df['High'].iloc[i].values[0]
+
+                # Stop loss
+                if low <= stop_loss.values[0]:
+                    trades.append({
+                        'entry': entry_price,
+                        'exit': stop_loss,
+                        'entry_idx': i,
+                        'exit_idx': i,
+                        'entry_date': self.df.index[i],  # ✅ clean
+                        'exit_date': self.df.index[i],           # ✅ clean
+                        'pnl': stop_loss - entry_price,
+                        'result': 'loss'
+                    })
+                    in_trade = False
+
+                # Take profit
+                elif high >= take_profit.values[0]:
+                    trades.append({
+                        'entry': entry_price,
+                        'exit': stop_loss,
+                        'entry_idx': i,
+                        'exit_idx': i,
+                        'entry_date': self.df.index[i],  # ✅ clean
+                        'exit_date': self.df.index[i],           # ✅ clean
+                        'pnl': stop_loss - entry_price,
+                        'result': 'loss'
+                    })
+                    in_trade = False
+
+        return trades
+    def plot_results(self, trades):
+        df = self.df
+
+        plt.figure(figsize=(16, 8))
+
+        # 📈 Price
+        plt.plot(df.index, df['Close'], label='Close', linewidth=1)
+
+        # 📊 Moving averages (if they exist)
+        if 'Close_MA_20' in df.columns:
+            plt.plot(df.index, df['Close_MA_20'], label='MA20', linestyle='--')
+
+        if 'Close_MA_50' in df.columns:
+            plt.plot(df.index, df['Close_MA_50'], label='MA50', linestyle='--')
+
+        # 🟢 Buy signals
+        if 'buy_signal' in self.signals.columns:
+            buys = df[self.signals['buy_signal']]
+
+            plt.scatter(
+                buys.index,
+                buys['Close'],
+                marker='^',
+                label='Buy Signal'
+            )
+
+        # 🔁 Trades (entries & exits)
+        print(trades)
+        for t in trades:
+            entry_i = t['entry_idx']
+            exit_i = t['exit_idx']
+
+            # Entry (green triangle up)
+            plt.scatter(
+                df.index[entry_i],
+                t['entry'],
+                marker='^',
+                color='green',
+                s=100,
+                label='Entry'
+            )
+
+            # Exit (red triangle down)
+            plt.scatter(
+                df.index[exit_i],
+                t['exit'],
+                marker='v',
+                color='red',
+                s=100,
+                label='Exit'
+            )
+
+            # Vertical lines connecting entry and exit
+            plt.axvline(df.index[entry_i], linestyle='--', alpha=0.3, color='green')
+            plt.axvline(df.index[exit_i], linestyle=':', alpha=0.3, color='red')
+
+            # Horizontal lines showing entry and exit prices
+            plt.hlines(
+                y=t['entry'],
+                xmin=df.index[entry_i],
+                xmax=df.index[exit_i],
+                linestyles='--',
+                alpha=0.3,
+                color='green'
+            )
+            plt.hlines(
+                y=t['exit'],
+                xmin=df.index[entry_i],
+                xmax=df.index[exit_i],
+                linestyles=':',
+                alpha=0.3,
+                color='red'
+            )
+
+        # 🏷 Labels
+        plt.title("Backtest Results")
+        plt.xlabel("Time")
+        plt.ylabel("Price")
+
+        plt.legend()
+        plt.grid()
+
+        plt.show()
+
+    def analyze_results(self, trades):
+        total_trades = len(trades)
+        wins = sum(1 for t in trades if t['result'] == 'win')
+        losses = sum(1 for t in trades if t['result'] == 'loss')
+
+        total_pnl = sum(t['pnl'] for t in trades)
+
+        win_rate = wins / total_trades if total_trades > 0 else 0
+
+        print(f"Trades: {total_trades}")
+        print(f"Win rate: {win_rate:.2%}")
+        print(f"Total PnL: {total_pnl.values[0]:.2f}")
+
+        return {
+            'trades': total_trades,
+            'win_rate': win_rate,
+            'pnl': total_pnl
+        }
+
+class PullbackStrategy(BaseStrategy):
     def __init__(self, df, ma_short=20, ma_long=50, trend_lookback=63):
         """
         df: DataFrame with columns: open, high, low, close, stoch_k
@@ -20,9 +178,9 @@ class PullbackStrategy:
         """Check if stock is in uptrend for last 3 months"""
         if idx < self.trend_lookback:
             return False
-        lows = self.df['low'].iloc[idx-self.trend_lookback:idx]
-        ma20 = self.df[f'close_MA_{self.ma_short}'].iloc[idx-self.trend_lookback:idx]
-        ma50 = self.df[f'close_MA_{self.ma_long}'].iloc[idx-self.trend_lookback:idx]
+        lows = self.df['Low'].iloc[idx-self.trend_lookback:idx]
+        ma20 = self.df[f'Close_MA_{self.ma_short}'].iloc[idx-self.trend_lookback:idx]
+        ma50 = self.df[f'Close_MA_{self.ma_long}'].iloc[idx-self.trend_lookback:idx]
 
         ma20_diff = ma20.diff().dropna()
         ma50_diff = ma50.diff().dropna()
@@ -35,11 +193,11 @@ class PullbackStrategy:
 
     def pullback_to_ma(self, idx):
         """Check price near 20 MA, between 20 & 50, or near 50 MA"""
-        price = self.df['close'].iloc[idx]
-        ma20 = self.df[f'close_MA_{self.ma_short}'].iloc[idx]
-        ma50 = self.df[f'close_MA_{self.ma_long}'].iloc[idx]
+        price = self.df['Close'].iloc[idx]
+        ma20 = self.df[f'Close_MA_{self.ma_short}'].iloc[idx]
+        ma50 = self.df[f'Close_MA_{self.ma_long}'].iloc[idx]
 
-        return ma20 <= price <= ma50 or abs(price - ma20)/ma20 < 0.02 or abs(price - ma50)/ma50 < 0.02
+        return ma20 <= price.values[0] <= ma50 or abs(price.values[0] - ma20)/ma20 < 0.02 or abs(price.values[0] - ma50)/ma50 < 0.02
 
     def stochastic_oversold(self, idx):
         """Check if stochastic %K <= 20"""
@@ -47,11 +205,11 @@ class PullbackStrategy:
 
     def bullish_candle(self, idx):
         """Check for bullish reversal candle (simplified as close > open)"""
-        return self.df['close'].iloc[idx] > self.df['open'].iloc[idx]
+        return self.df['Close'].iloc[idx].values[0] > self.df['Open'].iloc[idx].values[0]
 
     def calculate_risk_reward(self, idx, stop_distance=0.07, reward_ratio=1.75):
         """Stop-loss 7% below entry, take-profit 1.75 x risk"""
-        entry_price = self.df['close'].iloc[idx]
+        entry_price = self.df['Close'].iloc[idx]
         stop_loss = entry_price * (1 - stop_distance)
         risk = entry_price - stop_loss
         take_profit = entry_price + risk * reward_ratio
@@ -81,9 +239,8 @@ class PullbackStrategy:
         self.signals['stop_loss'] = stop_losses
         self.signals['take_profit'] = take_profits
         return self.signals
-    
 
-class CoiledSpringStrategy:
+class CoiledSpringStrategy(BaseStrategy):
     def __init__(self, df, ma_short=20, ma_long=50):
         """
         df: DataFrame with columns: open, high, low, close
@@ -99,8 +256,8 @@ class CoiledSpringStrategy:
         """Check if stock is weakly or strongly uptrending"""
         if idx < lookback:
             return False
-        ma20 = self.df[f'close_MA_{self.ma_short}'].iloc[idx-lookback:idx]
-        ma50 = self.df[f'close_MA_{self.ma_long}'].iloc[idx-lookback:idx]
+        ma20 = self.df[f'Close_MA_{self.ma_short}'].iloc[idx-lookback:idx]
+        ma50 = self.df[f'Close_MA_{self.ma_long}'].iloc[idx-lookback:idx]
         ma20_diff = ma20.diff().dropna()
         ma50_diff = ma50.diff().dropna()
         # Strong: 20 above 50 and rising
@@ -113,22 +270,22 @@ class CoiledSpringStrategy:
         """New high within last 20 days and 3-month high"""
         if idx < high_lookback or idx < three_month:
             return False
-        recent_max = self.df['high'].iloc[idx-high_lookback:idx].max()
-        three_month_max = self.df['high'].iloc[idx-three_month:idx].max()
-        return (self.df['high'].iloc[idx] > recent_max) and (self.df['high'].iloc[idx] > three_month_max)
+        recent_max = self.df['High'].iloc[idx-high_lookback:idx].max()
+        three_month_max = self.df['High'].iloc[idx-three_month:idx].max()
+        return (self.df['High'].iloc[idx].values[0] > recent_max.values[0]) and (self.df['High'].iloc[idx].values[0] > three_month_max.values[0])
 
     def coil_range_check(self, idx, min_days=7, max_days=20):
         """Check coiled spring narrowing range over last 7–20 days"""
         for days in range(min_days, max_days+1):
             if idx < days:
                 continue
-            window = self.df['high'].iloc[idx-days:idx], self.df['low'].iloc[idx-days:idx]
+            window = self.df['High'].iloc[idx-days:idx], self.df['Low'].iloc[idx-days:idx]
             highs, lows = window
             # Range must be narrowing
             range_widths = highs.values - lows.values
             if all(x >= y for x, y in zip(range_widths[:-1], range_widths[1:])):
                 # Must not touch 50 MA
-                ma50_max = self.df[f'close_MA_{self.ma_long}'].iloc[idx-days:idx].max()
+                ma50_max = self.df[f'Close_MA_{self.ma_long}'].iloc[idx-days:idx].max()
                 if highs.max() < ma50_max:
                     return True
         return False
@@ -148,11 +305,11 @@ class CoiledSpringStrategy:
         self.signals['buy_signal'] = buy_signals
         return self.signals
 
-class BullishDivergenceStrategy:
+class BullishDivergenceStrategy(BaseStrategy):
     def __init__(self, df, ma_short=50, ma_long=200):
         """
         df: DataFrame with indicators already calculated:
-        close_MA_50, close_MA_200, MACD, stoch_k, rsi, obv, cci, open, high, low, close
+        close_MA_50, Close_MA_200, MACD, stoch_k, rsi, obv, cci, open, high, low, close
         """
         self.df = df.copy()
         self.ma_short = ma_short
@@ -164,10 +321,10 @@ class BullishDivergenceStrategy:
         if idx < trend_period:
             return False
         for i in range(idx-trend_period+1, idx+1):
-            ma_50 = self.df[f'close_MA_{self.ma_short}'].iloc[i]
-            ma_200 = self.df[f'close_MA_{self.ma_long}'].iloc[i]
-            ma_200_slope = self.df[f'close_MA_{self.ma_long}'].iloc[i] - self.df[f'close_MA_{self.ma_long}'].iloc[i-1]
-            price = self.df['close'].iloc[i]
+            ma_50 = self.df[f'Close_MA_{self.ma_short}'].iloc[i]
+            ma_200 = self.df[f'Close_MA_{self.ma_long}'].iloc[i]
+            ma_200_slope = self.df[f'Close_MA_{self.ma_long}'].iloc[i] - self.df[f'Close_MA_{self.ma_long}'].iloc[i-1]
+            price = self.df['Close'].iloc[i].values[0]
             if not (ma_50 > ma_200 and ma_200_slope > 0 and price < ma_50):
                 return False
         return True
@@ -176,7 +333,7 @@ class BullishDivergenceStrategy:
         """Find at least two lows separated by min_gap days"""
         lows = []
         for i in range(max(0, idx-lookback), idx+1):
-            if i == 0 or self.df['low'].iloc[i] < self.df['low'].iloc[i-1] and self.df['low'].iloc[i] < self.df['low'].iloc[min(i+1, idx)]:
+            if i == 0 or self.df['Low'].iloc[i].values[0] < self.df['Low'].iloc[i-1].values[0] and self.df['Low'].iloc[i].values[0] < self.df['Low'].iloc[min(i+1, idx)].values[0]:
                 if len(lows) == 0 or i - lows[-1] >= min_gap:
                     lows.append(i)
         if len(lows) >= 2:
@@ -201,16 +358,16 @@ class BullishDivergenceStrategy:
             return False
         prev = self.df.iloc[idx-1]
         curr = self.df.iloc[idx]
-        body = abs(prev['close'] - prev['open'])
-        candle_range = prev['high'] - prev['low']
-        lower_wick = prev['open'] - prev['low'] if prev['close'] > prev['open'] else prev['close'] - prev['low']
-        hammer = lower_wick > 2*body and body/candle_range < 0.4 and prev['close'] > prev['open']
-        engulfing = curr['close'] > curr['open'] and curr['open'] < prev['close'] and curr['close'] > prev['open']
+        body = abs(prev['Close'] - prev['Open'])
+        candle_range = prev['High'] - prev['Low']
+        lower_wick = prev['Open'] - prev['Low'] if prev['Close'].values[0] > prev['Open'].values[0] else prev['Close'] - prev['Low']
+        hammer = lower_wick.values[0] > 2*body.values[0] and body.values[0]/candle_range.values[0] < 0.4 and prev['Close'].values[0] > prev['Open'].values[0]
+        engulfing = curr['Close'].values[0] > curr['Open'].values[0] and curr['Open'].values[0] < prev['Close'].values[0] and curr['Close'].values[0] > prev['Open'].values[0]
         return hammer or engulfing
 
     def calculate_risk_reward(self, idx, last_low_idx):
-        stop_loss = self.df['low'].iloc[last_low_idx]
-        entry_price = self.df['close'].iloc[idx]
+        stop_loss = self.df['Low'].iloc[last_low_idx]
+        entry_price = self.df['Close'].iloc[idx]
         risk = entry_price - stop_loss
         take_profit = entry_price + risk * 1.75
         return stop_loss, take_profit
@@ -240,7 +397,7 @@ class BullishDivergenceStrategy:
         return self.signals
 
 
-class BlueSkyBreakoutStrategy:
+class BlueSkyBreakoutStrategy(BaseStrategy):
     def __init__(self, df):
         """
         df: DataFrame with columns:
@@ -253,24 +410,24 @@ class BlueSkyBreakoutStrategy:
         """Price exceeds the previous 20 highs"""
         if idx < lookback:
             return False
-        prev_highs = self.df['high'].iloc[idx-lookback:idx]
-        return (self.df['close'].iloc[idx] > prev_highs.max()) or (self.df['high'].iloc[idx] > prev_highs.max())
+        prev_highs = self.df['High'].iloc[idx-lookback:idx]
+        return (self.df['Close'].iloc[idx].values[0] > prev_highs.max().values[0]) or (self.df['High'].iloc[idx].values[0] > prev_highs.max().values[0])
 
     def is_three_month_high(self, idx, lookback=63):
         """High is the highest in last 3 months"""
         if idx < lookback:
             return False
-        recent_high = self.df['high'].iloc[idx-lookback:idx].max()
-        return self.df['high'].iloc[idx] > recent_high
+        recent_high = self.df['High'].iloc[idx-lookback:idx].max().values[0]
+        return self.df['High'].iloc[idx].values[0] > recent_high
 
     def not_too_far_from_low(self, idx, low_lookback=252):
         """Ensure new high is not too far from 52-week low"""
         if idx < low_lookback:
-            low_window = self.df['low'].iloc[:idx+1]
+            low_window = self.df['Low'].iloc[:idx+1]
         else:
-            low_window = self.df['low'].iloc[idx-low_lookback:idx+1]
-        low_52w = low_window.min()
-        ratio = self.df['high'].iloc[idx] / low_52w
+            low_window = self.df['Low'].iloc[idx-low_lookback:idx+1]
+        low_52w = low_window.min().values[0]
+        ratio = self.df['High'].iloc[idx].values[0] / low_52w
         return ratio < 3.0
 
     def obv_confirmation(self, idx, lookback=63):
@@ -282,11 +439,11 @@ class BlueSkyBreakoutStrategy:
 
     def bullish_candle(self, idx):
         """Current candle is green"""
-        return self.df['close'].iloc[idx] > self.df['open'].iloc[idx]
+        return self.df['Close'].iloc[idx].values[0] > self.df['Open'].iloc[idx].values[0]
 
     def calculate_risk_reward(self, idx, stop_distance=0.07, reward_ratio=1.75):
         """Stop-loss 7% below entry, take-profit 1.75× risk"""
-        entry_price = self.df['close'].iloc[idx]
+        entry_price = self.df['Close'].iloc[idx]
         stop_loss = entry_price * (1 - stop_distance)
         risk = entry_price - stop_loss
         take_profit = entry_price + risk * reward_ratio
@@ -319,7 +476,7 @@ class BlueSkyBreakoutStrategy:
         return self.signals
     
 
-class BullishBaseBreakout:
+class BullishBaseBreakout(BaseStrategy):
     def __init__(self, df, ma_short=20, ma_long=50, base_lookback=30, downtrend_lookback=63, obv_ma_period=20):
         """
         df: DataFrame with columns: open, high, low, close, MACD, MACD_signal, obv
@@ -338,19 +495,28 @@ class BullishBaseBreakout:
         self.signals = pd.DataFrame(index=df.index)
 
     def is_downtrend(self, idx):
-        """Check if stock is in a downtrend for last 3 months"""
+        """Check if stock is in uptrend for last 3 months"""
         if idx < self.downtrend_lookback:
             return False
-        highs = self.df['high'].iloc[idx-self.downtrend_lookback:idx]
-        # Simple lower highs check
-        return all(x > y for x, y in zip(highs, highs[1:]))
+        lows = self.df['Low'].iloc[idx-self.downtrend_lookback:idx]
+        ma20 = self.df[f'Close_MA_{self.ma_short}'].iloc[idx-self.downtrend_lookback:idx]
+        ma50 = self.df[f'Close_MA_{self.ma_long}'].iloc[idx-self.downtrend_lookback:idx]
+
+        ma20_diff = ma20.diff().dropna()
+        ma50_diff = ma50.diff().dropna()
+
+        strong = all(ma20_diff < 0) and all(ma50_diff < 0) and ma20.iloc[-1] < ma50.iloc[-1]
+        weak = (ma20_diff.mean() < 0) and (ma50_diff.mean() < 0) and ma20.iloc[-1] < ma50.iloc[-1]
+        #higher_lows = all(x < y for x, y in zip(lows[:-1], lows[1:]))
+
+        return (strong or weak)
 
     def is_strong_or_weak_downtrend(self, idx):
         """Check 20 and 50 MA behavior for strong or weak downtrend"""
         if idx < self.ma_long + self.downtrend_lookback:
             return False
-        ma20 = self.df[f'close_MA_{self.ma_short}'].iloc[idx-self.downtrend_lookback:idx]
-        ma50 = self.df[f'close_MA_{self.ma_long}'].iloc[idx-self.downtrend_lookback:idx]
+        ma20 = self.df[f'Close_MA_{self.ma_short}'].iloc[idx-self.downtrend_lookback:idx]
+        ma50 = self.df[f'Close_MA_{self.ma_long}'].iloc[idx-self.downtrend_lookback:idx]
 
         ma20_diff = ma20.diff().dropna()
         ma50_diff = ma50.diff().dropna()
@@ -365,7 +531,7 @@ class BullishBaseBreakout:
         """Check price is in a base for last base_lookback days"""
         if idx < self.base_lookback:
             return False
-        window = self.df['close'].iloc[idx-self.base_lookback:idx]
+        window = self.df['Close'].iloc[idx-self.base_lookback:idx].values[0]
         # Simple volatility check (flat or falling rectangle)
         range_pct = (window.max() - window.min()) / window.mean()
         return range_pct <= 0.08  # 8% threshold for base
@@ -386,12 +552,12 @@ class BullishBaseBreakout:
 
     def bullish_candle(self, idx):
         """Green candle"""
-        return self.df['close'].iloc[idx] > self.df['open'].iloc[idx]
+        return self.df['Close'].iloc[idx].values[0] > self.df['Open'].iloc[idx].values[0]
 
     def calculate_risk_reward(self, idx):
         """Stop-loss below base low, take-profit 1.75 x risk"""
-        base_low = self.df['low'].iloc[idx-self.base_lookback:idx].min()
-        entry_price = self.df['close'].iloc[idx]
+        base_low = self.df['Low'].iloc[idx-self.base_lookback:idx].min()
+        entry_price = self.df['Close'].iloc[idx]
         risk = entry_price - base_low
         stop_loss = base_low
         take_profit = entry_price + risk * 1.75
