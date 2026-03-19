@@ -29,9 +29,9 @@ class PullbackStrategy:
 
         strong = all(ma20_diff > 0) and all(ma50_diff > 0) and ma20.iloc[-1] > ma50.iloc[-1]
         weak = (ma20_diff.mean() > 0) and (ma50_diff.mean() > 0) and ma20.iloc[-1] > ma50.iloc[-1]
-        higher_lows = all(x < y for x, y in zip(lows[:-1], lows[1:]))
+        #higher_lows = all(x < y for x, y in zip(lows[:-1], lows[1:]))
 
-        return higher_lows and (strong or weak)
+        return (strong or weak)
 
     def pullback_to_ma(self, idx):
         """Check price near 20 MA, between 20 & 50, or near 50 MA"""
@@ -43,7 +43,7 @@ class PullbackStrategy:
 
     def stochastic_oversold(self, idx):
         """Check if stochastic %K <= 20"""
-        return self.df['stoch_k'].iloc[idx] <= 20
+        return self.df['stoch_k'].iloc[idx] <= 25
 
     def bullish_candle(self, idx):
         """Check for bullish reversal candle (simplified as close > open)"""
@@ -406,7 +406,6 @@ class BullishBaseBreakout:
             if (self.is_downtrend(idx) and
                 self.is_strong_or_weak_downtrend(idx) and
                 self.in_consolidation_base(idx) and
-                self.macd_higher_lows(idx) and
                 self.obv_breakout(idx) and
                 self.bullish_candle(idx)):
 

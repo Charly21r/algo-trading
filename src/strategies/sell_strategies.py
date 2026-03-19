@@ -38,7 +38,7 @@ class ReliefRallyShortStrategy:
             and ma20.iloc[-1] < ma50.iloc[-1]
         )
 
-        return lower_highs and (strong or weak)
+        return strong or weak
 
     def rally_into_ma(self, idx):
 
@@ -514,7 +514,6 @@ class RisingWedgeBreakdownStrategy:
             if (
                 self.uptrend(idx)
                 and self.rising_wedge(idx)
-                and self.macd_lower_highs(idx)
                 and self.obv_breakdown(idx)
                 and self.bearish_candle(idx)
             ):
