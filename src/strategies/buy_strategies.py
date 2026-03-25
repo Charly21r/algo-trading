@@ -3,8 +3,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 class BaseStrategy:
-    def __init__(self, df):
+    def __init__(self, df, initial_capital=10000):
         self.df = df
+        self.initial_capital = initial_capital
         self.signals = df.copy()
 
     def backtest(self):
@@ -12,51 +13,69 @@ class BaseStrategy:
         entry_price = 0
         stop_loss = 0
         take_profit = 0
+        position_size = 0
+
+        capital = self.initial_capital
 
         trades = []
 
         for i in range(len(self.df)):
             price = self.df['Close'].iloc[i]
 
+            # ENTRY
             if not in_trade and self.signals['buy_signal'].iloc[i]:
                 in_trade = True
-                entry_price = price
-                stop_loss = self.signals['stop_loss'].iloc[i]
-                take_profit = self.signals['take_profit'].iloc[i]
+                entry_price = float(price)
+                stop_loss = float(self.signals['stop_loss'].iloc[i])
+                take_profit = float(self.signals['take_profit'].iloc[i])
 
+                # 🔥 Risk management (1% per trade)
+                risk_per_trade = capital * 0.01
+                risk_per_share = entry_price - stop_loss
+
+                if risk_per_share == 0:
+                    continue
+
+                position_size = risk_per_trade / risk_per_share
+
+            # EXIT
             elif in_trade:
-                low = self.df['Low'].iloc[i].values[0]
-                high = self.df['High'].iloc[i].values[0]
+                row = self.df.iloc[i]
+                low = float(row["Low"])
+                high = float(row["High"])
 
                 # Stop loss
-                if low <= stop_loss.values[0]:
+                if low <= stop_loss:
+                    pnl = (stop_loss - entry_price) * position_size
+                    capital += pnl
+
                     trades.append({
                         'entry': entry_price,
                         'exit': stop_loss,
-                        'entry_idx': i,
-                        'exit_idx': i,
-                        'entry_date': self.df.index[i],  # ✅ clean
-                        'exit_date': self.df.index[i],           # ✅ clean
-                        'pnl': stop_loss - entry_price,
-                        'result': 'loss'
+                        'pnl': pnl,
+                        'result': 'loss',
+                        'capital': capital
                     })
+
                     in_trade = False
 
                 # Take profit
-                elif high >= take_profit.values[0]:
+                elif high >= take_profit:
+                    pnl = (take_profit - entry_price) * position_size
+                    capital += pnl
+
                     trades.append({
                         'entry': entry_price,
-                        'exit': stop_loss,
-                        'entry_idx': i,
-                        'exit_idx': i,
-                        'entry_date': self.df.index[i],  # ✅ clean
-                        'exit_date': self.df.index[i],           # ✅ clean
-                        'pnl': stop_loss - entry_price,
-                        'result': 'loss'
+                        'exit': take_profit,
+                        'pnl': pnl,
+                        'result': 'win',
+                        'capital': capital
                     })
+
                     in_trade = False
 
-        return trades
+        return trades, capital
+    
     def plot_results(self, trades):
         df = self.df
 
@@ -84,7 +103,6 @@ class BaseStrategy:
             )
 
         # 🔁 Trades (entries & exits)
-        print(trades)
         for t in trades:
             entry_i = t['entry_idx']
             exit_i = t['exit_idx']
@@ -141,27 +159,31 @@ class BaseStrategy:
 
         plt.show()
 
-    def analyze_results(self, trades):
+    def analyze_results(self, trades, final_capital):
         total_trades = len(trades)
         wins = sum(1 for t in trades if t['result'] == 'win')
-        losses = sum(1 for t in trades if t['result'] == 'loss')
 
         total_pnl = sum(t['pnl'] for t in trades)
-
         win_rate = wins / total_trades if total_trades > 0 else 0
+
+        return_pct = (final_capital - self.initial_capital) / self.initial_capital
 
         print(f"Trades: {total_trades}")
         print(f"Win rate: {win_rate:.2%}")
-        print(f"Total PnL: {total_pnl.values[0]:.2f}")
+        print(f"Total PnL: {total_pnl:.2f}")
+        print(f"Final Capital: {final_capital:.2f}")
+        print(f"Return: {return_pct:.2%}")
 
         return {
             'trades': total_trades,
             'win_rate': win_rate,
-            'pnl': total_pnl
+            'pnl': total_pnl,
+            'return_pct': return_pct
         }
 
 class PullbackStrategy(BaseStrategy):
-    def __init__(self, df, ma_short=20, ma_long=50, trend_lookback=63):
+    def __init__(self, df, ma_short=20, ma_long=50, trend_lookback=63,initial_capital=10000):
+        super().__init__(df, initial_capital)
         """
         df: DataFrame with columns: open, high, low, close, stoch_k
         ma_short: 20 MA
@@ -197,7 +219,7 @@ class PullbackStrategy(BaseStrategy):
         ma20 = self.df[f'Close_MA_{self.ma_short}'].iloc[idx]
         ma50 = self.df[f'Close_MA_{self.ma_long}'].iloc[idx]
 
-        return ma20 <= price.values[0] <= ma50 or abs(price.values[0] - ma20)/ma20 < 0.02 or abs(price.values[0] - ma50)/ma50 < 0.02
+        return ma20 <= price.values[0] <= ma50 or abs(price.values[0] - ma20)/ma20 < 0.05 or abs(price.values[0] - ma50)/ma50 < 0.05
 
     def stochastic_oversold(self, idx):
         """Check if stochastic %K <= 20"""
@@ -216,32 +238,32 @@ class PullbackStrategy(BaseStrategy):
         return stop_loss, take_profit
 
     def generate_signals(self):
-        buy_signals = []
-        stop_losses = []
-        take_profits = []
+        buy_signals = [False] * len(self.df)
+        stop_losses = [np.nan] * len(self.df)
+        take_profits = [np.nan] * len(self.df)
 
         for idx in range(len(self.df)):
+
             if (self.is_uptrend(idx) and
                 self.pullback_to_ma(idx) and
                 self.stochastic_oversold(idx) and
                 self.bullish_candle(idx)):
 
                 stop_loss, take_profit = self.calculate_risk_reward(idx)
-                buy_signals.append(True)
-                stop_losses.append(stop_loss)
-                take_profits.append(take_profit)
-            else:
-                buy_signals.append(False)
-                stop_losses.append(np.nan)
-                take_profits.append(np.nan)
+
+                buy_signals[idx] = True
+                stop_losses[idx] = stop_loss
+                take_profits[idx] = take_profit
 
         self.signals['buy_signal'] = buy_signals
         self.signals['stop_loss'] = stop_losses
         self.signals['take_profit'] = take_profits
+
         return self.signals
 
 class CoiledSpringStrategy(BaseStrategy):
-    def __init__(self, df, ma_short=20, ma_long=50):
+    def __init__(self, df, ma_short=20, ma_long=50,initial_capital=10000):
+        super().__init__(df, initial_capital)
         """
         df: DataFrame with columns: open, high, low, close
         ma_short: 20 MA
@@ -306,7 +328,8 @@ class CoiledSpringStrategy(BaseStrategy):
         return self.signals
 
 class BullishDivergenceStrategy(BaseStrategy):
-    def __init__(self, df, ma_short=50, ma_long=200):
+    def __init__(self, df, ma_short=50, ma_long=200,initial_capital=10000):
+        super().__init__(df, initial_capital)
         """
         df: DataFrame with indicators already calculated:
         close_MA_50, Close_MA_200, MACD, stoch_k, rsi, obv, cci, open, high, low, close
@@ -398,7 +421,8 @@ class BullishDivergenceStrategy(BaseStrategy):
 
 
 class BlueSkyBreakoutStrategy(BaseStrategy):
-    def __init__(self, df):
+    def __init__(self, df,initial_capital=10000):
+        super().__init__(df, initial_capital)
         """
         df: DataFrame with columns:
         open, high, low, close, obv
@@ -477,7 +501,8 @@ class BlueSkyBreakoutStrategy(BaseStrategy):
     
 
 class BullishBaseBreakout(BaseStrategy):
-    def __init__(self, df, ma_short=20, ma_long=50, base_lookback=30, downtrend_lookback=63, obv_ma_period=20):
+    def __init__(self, df, ma_short=20, ma_long=50, base_lookback=30, downtrend_lookback=63, obv_ma_period=20,initial_capital=10000):
+        super().__init__(df, initial_capital)
         """
         df: DataFrame with columns: open, high, low, close, MACD, MACD_signal, obv
         ma_short: period for 20 MA

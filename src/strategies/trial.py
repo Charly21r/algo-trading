@@ -4,8 +4,9 @@ import yfinance as yf
 from utils import add_moving_average, add_macd, add_stochastic, add_obv, add_rsi, add_cci
 
 ticker = "^GSPC"
-data = pd.DataFrame(yf.download(ticker, start='2024-01-01', end='2025-01-01'))
+data = pd.DataFrame(yf.download(ticker, start='2015-01-01', end='2025-01-01'))
 
+print(data.iloc[-1]["Close"].values[0]-data.iloc[0]["Close"].values[0])
 data = add_moving_average(data, "Close", 20)
 data = add_moving_average(data, "Close", 50)
 data = add_moving_average(data, "Close", 200)
@@ -20,6 +21,8 @@ print(data.columns)
 Pullback = BlueSkyBreakoutStrategy(data)
 
 signals = Pullback.generate_signals()
-trades = Pullback.backtest()
-profit_losses = Pullback.analyze_results(trades)
-Pullback.plot_results(trades)
+trades, final_capital = Pullback.backtest()
+profit_losses = Pullback.analyze_results(trades, final_capital)
+#Pullback.plot_results(trades)
+print("Baseline:", (data["Close"].iloc[-1].values[0]-data.iloc[0]["Close"].values[0])/data.iloc[0]["Close"].values[0])
+print(data["Close"].iloc[-1].values[0], data.iloc[0]["Close"].values[0])
