@@ -241,8 +241,8 @@ def plot_full_chart(df, save_path="chart.png"):
 
 import yfinance as yf
 
-ticker = "^GSPC"
-data = pd.DataFrame(yf.download(ticker, start='2020-01-01', end='2025-01-01'))
+ticker = "CD"
+data = pd.DataFrame(yf.download(ticker, start='2024-01-01', end='2025-01-01'))
 returns = data.pct_change().dropna()
 
 print(data)
