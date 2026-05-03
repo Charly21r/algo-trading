@@ -451,38 +451,35 @@ def johansen_test(series_list, names=None, det_order=0, k_ar_diff=1, significanc
 # ─────────────────────────────────────────────
 
 if __name__ == "__main__":
-
     import yfinance as yf
 
-    # Download example data
     print("Downloading data...")
-    spy  = yf.download("SPY",  start="2020-01-01", end="2025-01-01")["Close"].squeeze()
-    qqq  = yf.download("QQQ",  start="2020-01-01", end="2025-01-01")["Close"].squeeze()
-    gld  = yf.download("GLD",  start="2020-01-01", end="2025-01-01")["Close"].squeeze()
+    ewa = yf.download("EWA", start="2015-01-01", end="2020-01-01")["Close"].squeeze()
+    ewc = yf.download("EWC", start="2015-01-01", end="2020-01-01")["Close"].squeeze()
+    gld = yf.download("GLD", start="2015-01-01", end="2020-01-01")["Close"].squeeze()
+    ewa.name, ewc.name, gld.name = "EWA", "EWC", "GLD"
 
-    spy.name = "SPY"
-    qqq.name = "QQQ"
-    gld.name = "GLD"
+    # 1. Stationarity — prices should be I(1), returns should be I(0)
+    adf_test(ewa, name="EWA Price")
+    adf_test(ewa.pct_change().dropna(), name="EWA Returns")
 
-    # 1. ADF test on SPY prices (expect non-stationary) and returns (expect stationary)
-    adf_test(spy, name="SPY Price")
-    adf_test(spy.pct_change().dropna(), name="SPY Returns")
+    # 2. Hurst on EWA — expect H > 0.5 (prices trend), H < 0.5 on spread
+    hurst_exponent(ewa)
 
-    # 2. Hurst exponent on SPY
-    hurst_exponent(spy)
+    # 3. Variance ratio on EWA
+    variance_ratio_test(ewa, lags=(2, 4, 8, 16, 32))
 
-    # 3. Variance ratio test on SPY
-    variance_ratio_test(spy, lags=(2, 4, 8, 16, 32))
+    # 4. CADF: EWA vs EWC — the pair you're actually trading
+    cadf_result = cadf_test(ewa, ewc, name_y="EWA", name_x="EWC")
 
-    # 4. Half-life on SPY returns (mean reversion speed)
-    half_life_mean_reversion(spy.pct_change().dropna(), name="SPY Returns")
+    # 5. Half-life on the SPREAD, not on returns — this is what matters for the strategy
+    half_life_mean_reversion(cadf_result["spread"], name="EWA/EWC spread")
 
-    # 5. CADF test: SPY vs QQQ (expect cointegrated) and SPY vs GLD (expect not)
-    cadf_test(spy, qqq, name_y="SPY", name_x="QQQ")
-    cadf_test(spy, gld, name_y="SPY", name_x="GLD")
+    # 6. Hurst on the spread — expect H < 0.5 if genuinely mean-reverting
+    hurst_exponent(cadf_result["spread"])
 
-    # 6. Johansen test: SPY, QQQ, GLD as a group
-    johansen_test([spy, qqq, gld], names=["SPY", "QQQ", "GLD"])
+    # 7. Johansen on EWA + EWC
+    johansen_test([ewa, ewc], names=["EWA", "EWC"])
 
-    # Also test just SPY + QQQ pair (compare with CADF result above)
-    johansen_test([spy, qqq], names=["SPY", "QQQ"])
+    # 8. Also test EWA, EWC, GLD as a trio
+    johansen_test([ewa, ewc, gld], names=["EWA", "EWC", "GLD"])
