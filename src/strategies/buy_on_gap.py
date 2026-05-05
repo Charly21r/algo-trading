@@ -536,17 +536,79 @@ def load_universe(tickers, start, end):
 
 if __name__ == "__main__":
 
-    UNIVERSE = [
-        "AAPL", "MSFT", "AMZN", "GOOGL", "META",
-        "NVDA", "JPM",  "JNJ",  "V",     "PG",
-        "UNH",  "HD",   "MA",   "DIS",   "BAC",
-        "XOM",  "PFE",  "CSCO", "ADBE",  "CRM",
-        "NFLX", "INTC", "AMD",  "PYPL",  "QCOM",
-        "T",    "VZ",   "WMT",  "KO",    "MCD",
+    US_LARGE_CAPS = [
+        "TSLA","BRK.B","LLY","AVGO","COST","ABBV","PEP","MRK","TMO","ACN",
+        "DHR","MCD","LIN","NEE","TXN","LOW","UNP","PM","UPS","RTX",
+        "HON","IBM","CAT","GS","SPGI","BLK","AMGN","INTU","PLD","DE"
+    ]
+    TECH_GROWTH = [
+        "SNOW","CRWD","ZS","NET","DDOG","MDB","OKTA","SHOP","SQ","ROKU",
+        "U","AI","PLTR","COIN","RBLX","DOCU","TWLO","TEAM","WDAY","PANW"
+    ]
+    SEMIS = [
+        "TSM","ASML","MU","AMAT","LRCX","KLAC","MRVL","ON","NXPI","ADI",
+        "MCHP","MPWR"
+    ]
+    FINANCIALS = [
+        "C","WFC","MS","SCHW","AXP","BK","USB","PNC","TFC","COF",
+        "ICE","CME","SPGI","MCO"
+    ]
+    HEALTHCARE = [
+        "ABT","BMY","GILD","ISRG","VRTX","REGN","ZTS","HCA","CI","ELV",
+        "MRNA","BIIB","ILMN"
     ]
 
+    CONSUMER = [
+        "NKE","SBUX","TGT","COST","DG","DLTR","EBAY","ETSY","BBY","ORLY",
+        "AZO","YUM","CMG"
+    ]
+    ENERGY = [
+        "CVX","SLB","COP","EOG","PSX","MPC","OXY","KMI","HAL"
+    ]
+
+    INDUSTRIALS = [
+        "BA","GE","MMM","LMT","NOC","GD","FDX","CSX","NSC","WM","RSG"
+    ]
+
+    INTERNATIONAL = [
+        "BABA","JD","PDD","TCEHY","NIO","XPEV","LI",
+        "SAP","ASML","UL","NSRGY","TM","SONY","SHEL","HSBC"
+    ]
+
+    ETFS = [
+        "SPY","QQQ","IWM","DIA","VTI",
+        "ARKK","XLF","XLK","XLE","XLV","XLY","XLP","XLI","XLU",
+        "SMH","SOXX","TAN","ICLN",
+        "EEM","FXI","EWJ","VGK"
+    ]
+
+    BASE_UNIVERSE = [ "AAPL", "MSFT", "AMZN", "GOOGL", "META", "NVDA", "JPM", "JNJ", "V", "PG", "UNH", "HD", "MA", "DIS", "BAC", "XOM", "PFE", "CSCO", "ADBE", "CRM", "NFLX", "INTC", "AMD", "PYPL", "QCOM", "T", "VZ", "WMT", "KO", "MCD", ]
+    
+    INDEXES = [
+        "^GSPC",   # S&P 500
+        "^IXIC",   # Nasdaq
+        "^DJI",    # Dow Jones
+        "^RUT",    # Russell 2000
+        "^VIX",    # Volatility Index
+        "^FTSE",   # FTSE 100
+        "^N225",   # Nikkei
+        "^HSI"     # Hang Seng
+    ]
+
+    UNIVERSE = (
+    BASE_UNIVERSE +
+    US_LARGE_CAPS +
+    SEMIS +
+    FINANCIALS
+    #ENERGY +
+    #INDUSTRIALS +
+    #INTERNATIONAL +
+    #ETFS +
+    #INDEXES
+)
+
     print("Downloading universe...")
-    data = load_universe(UNIVERSE, start="2015-01-01", end="2020-01-01")
+    data = load_universe(UNIVERSE, start="2020-01-01", end="2025-01-01")
 
     # ── Run with default parameters (equal sizing) ───────────────────────────
     strat = BuyOnGapStrategy(
@@ -567,7 +629,7 @@ if __name__ == "__main__":
     # ── Inverse sizing (bigger gap = bigger position) ────────────────────────
     strat_inv = BuyOnGapStrategy(
         data,
-        vol_window      = 90,
+        vol_window      = 20,
         ma_window       = 20,
         gap_threshold   = -1.0,
         n_stocks        = 10,
